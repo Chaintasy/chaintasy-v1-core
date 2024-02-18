@@ -8,8 +8,11 @@ import "./BookFactory.sol";
 import "./BookLibrary.sol";
 import "./BookMarketplace.sol";
 import "./Membership.sol";
+import "./IBlast.sol";
 
 contract BookManager is Ownable {
+
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
     
     IERC20 public CTY;
 
@@ -57,14 +60,16 @@ contract BookManager is Ownable {
     uint256 public NUMBER_OF_LIKE_FOR_REWARD;
     uint256 public TIME_TO_WITHDRAW;
 
-    address public auditor = 0xF575Dbef3CC95A23B6D49F7D83aa135C6446e927;
-
     event NewBook(address, string);
+    event NewChapter(address, string);
     event WithdrawDeposit(address, string);
     event Deposit(address, string);
     event Payment(address, string);
 
-    constructor() {}
+    constructor() {
+        BLAST.configureClaimableGas(); 
+
+    }
 
     // Use Book Factory contract for upgradability of Book Contract
     function updateBookFactoryContract(address _bookFactory) public onlyOwner {
@@ -126,11 +131,10 @@ contract BookManager is Ownable {
             _title,
             _category,
             _image,
-            _description,
-            auditor
+            _description
         );
         BookLibrary bookLibrary = BookLibrary(bookLibraryAddress);
-        bookLibrary.addBook(address(book), msg.sender, _category);
+        bookLibrary.addBook(address(book), msg.sender);
         emit NewBook(msg.sender, "New Book Created");
     }
 
@@ -151,14 +155,14 @@ contract BookManager is Ownable {
     }
 
     // Pay the chapter fee in order to view the chapter content
-    function pay(uint256 pid, address _bookAddress, uint256 _tokenId, uint256 _amount) public {
+    function pay(uint256 _pid, address _bookAddress, uint256 _tokenId, uint256 _amount) public {
         Book book = Book(_bookAddress);
         BookLibrary bookLibrary = BookLibrary(bookLibraryAddress);
         require(_amount >= book.getFeeByChapter(_tokenId), "Insufficient fee");
 
         // Payment is with stablecoin
-        require(pid < stablecoinPool.length, "Invalid pool ID");
-        IERC20 stablecoin = stablecoinPool[pid];
+        require(_pid < stablecoinPool.length, "Invalid pool ID");
+        IERC20 stablecoin = stablecoinPool[_pid];
 
         // 97.5% of the fee goes to author
         uint256 amountToAuthor = (_amount * 975) / 1000;
@@ -208,13 +212,13 @@ contract BookManager is Ownable {
     }
 
     // Allows any reader to support the author with tips
-    function tip(uint256 pid, address _bookAddress, uint256 _amount) public {
+    function tip(uint256 _pid, address _bookAddress, uint256 _amount) public {
         Book book = Book(_bookAddress);
         BookLibrary bookLibrary = BookLibrary(bookLibraryAddress);
 
         // Payment is with multi-token pool
-        require(pid < tokenPool.length, "Invalid pool ID");
-        IERC20 token = tokenPool[pid];
+        require(_pid < tokenPool.length, "Invalid pool ID");
+        IERC20 token = tokenPool[_pid];
 
         // 97.5% of the fee goes to author
         uint256 amountToAuthor = (_amount * 975) / 1000;
@@ -244,7 +248,7 @@ contract BookManager is Ownable {
     }
 
     // Create new chapter
-    function createChapter(
+    function createNewChapter(
         address _bookAddress,
         uint256 _amount,
         string memory _chapterTitle,
@@ -268,19 +272,21 @@ contract BookManager is Ownable {
 
         // mint new chapter NFT to the author
         book.mintChapter(msg.sender, _chapterTitle, _content, _fee);
+        emit NewChapter(msg.sender, "New Chapter");
 
         // Register the new chapter to Book Library contract
-        bookLibrary.addChapter(_bookAddress);
+        // *** Change this data to offchain ***
+        // bookLibrary.addChapter(_bookAddress);
 
         // Create the deposit details for this transaction
         DepositDetails memory depositDetails = DepositDetails(
-            book.getBookChapterLength(),
+            book.tokenId(),
             _amount,
             block.timestamp + TIME_TO_WITHDRAW
         );
 
         // Create the deposit record bind to author address, book address and token ID
-        depositRecords[msg.sender][_bookAddress][book.getBookChapterLength()] = depositDetails;
+        depositRecords[msg.sender][_bookAddress][book.tokenId()] = depositDetails;
         
         // Increase the balance of the deposit pool of CTY tokens
         balanceOfDepositPool += _amount;
@@ -344,7 +350,6 @@ contract BookManager is Ownable {
     function penalise(
         address _bookAddress,
         uint8 _tokenId,
-        uint8 _category,
         address _author,
         string memory _reason
     ) public onlyOwner {
@@ -355,7 +360,7 @@ contract BookManager is Ownable {
 
         // Book Library contract will place 1 warning on the book
         // Once the book has accumulated 3 warnings, the book will be blacklisted
-        bookLibrary.penaliseBook(_bookAddress, _category, _reason);
+        bookLibrary.penaliseBook(_bookAddress, _reason);
 
         // If deposit amount is more than 0,  
         // i.e. author has not withdraw the deposit or the duration is still within X days
@@ -386,4 +391,10 @@ contract BookManager is Ownable {
         balanceOfLikeRewardPool += _amount;
         require(CTY.transferFrom(msg.sender, address(this), _amount), "Error in deposit");
     }
+
+    // Note: in production, you would likely want to restrict access to this
+    function claimMyContractsGas() external onlyOwner{
+        BLAST.claimMaxGas(address(this), msg.sender);
+    }
+
 }

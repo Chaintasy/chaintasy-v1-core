@@ -5,12 +5,14 @@ pragma solidity ^0.8.0;
 // import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "./Membership.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
+import "./IBlast.sol";
 
 contract Book is ERC721URIStorage  {
-    using Counters for Counters.Counter;
-    Counters.Counter private _tokenIds;
+
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
+
+    uint256 public tokenId;
 
     // Book Manager contract will function as the owner to control 2 things:
     // 1. Mint new chapter NFT
@@ -18,9 +20,6 @@ contract Book is ERC721URIStorage  {
     address public bookManager;
 
     address public membershipAddress; 
-
-    // Auditor to have full view access to inspect the content of the book
-    address public auditor;
 
     // Only current author is allowed to mint new chapter NFT
     // Authorship can be transfer, but ownership of existing chapter NFT still remains
@@ -40,8 +39,11 @@ contract Book is ERC721URIStorage  {
         uint256 chapterCreationTimestamp;
     }
 
-    event BookChange (address, string);
-    event ChapterChange (address, string);
+    event NewBook (address, string);
+    event UpdateBook (address, string);
+    event NewChapter (address, string);
+    event UpdateChapter (address, string);
+    event ClaimGas (address, string);
 
     // Keeping track of chapter NFT
     mapping(uint256 => BookChapter) private tokenIdToBook;
@@ -57,8 +59,7 @@ contract Book is ERC721URIStorage  {
         address _authorAddress, 
         uint8 _category, 
         string memory _image, 
-        string memory _description, 
-        address _auditor
+        string memory _description
     ) ERC721 (_title, "BOOK"){
         bookManager = _bookManager;
         membershipAddress = _membership;
@@ -66,14 +67,14 @@ contract Book is ERC721URIStorage  {
         description = _description;
         image = _image;
         category = _category;
-        auditor = _auditor;
         bookCreationTimestamp = block.timestamp;
         completed = false;
+        BLAST.configureClaimableGas(); 
     }
 
     // Generate token URI to be stored in NFT
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        BookChapter memory bookChapter = tokenIdToBook[tokenId];
+    function tokenURI(uint256 _tokenId) public view override returns (string memory) {
+        BookChapter memory bookChapter = tokenIdToBook[_tokenId];
         bytes memory dataURI = abi.encodePacked(
             '{',
                 '"name": "', name(), ' - ', bookChapter.chapterTitle, '",',
@@ -93,15 +94,15 @@ contract Book is ERC721URIStorage  {
     function mintChapter(address _author, string memory _chapterTitle, string memory _content, uint256 _fee) external {
         require(msg.sender == bookManager, "Unauthorise");
         require(!completed, "Book completed");
-        _tokenIds.increment();
-        uint256 newItemId = _tokenIds.current();
-        _safeMint(_author, newItemId);
+        tokenId = tokenId + 1;
+        uint256 newItemId = tokenId;
+        _mint(_author, newItemId);
         tokenIdToBook[newItemId].chapterTitle = _chapterTitle;
         tokenIdToBook[newItemId].content = _content;
         tokenIdToBook[newItemId].fee = _fee;
         tokenIdToBook[newItemId].chapterCreationTimestamp = block.timestamp;
         _setTokenURI(newItemId, tokenURI(newItemId));
-        emit ChapterChange(msg.sender, "Chapter Created");
+        // emit NewChapter(_author, "New Chapter");
     }
 
     // Update the book details. 
@@ -110,14 +111,14 @@ contract Book is ERC721URIStorage  {
         require(block.timestamp <= bookCreationTimestamp + 10 minutes, "Not allowed to edit");
         description = _description;
         image = _image;
-        emit BookChange(msg.sender, "Book Updated");
+        emit UpdateBook(msg.sender, "Update Book");
     }
 
     // Update book as Completed
     function updateBookStatus() external {
         require(author == msg.sender, "Unauthorise");
         completed = true;
-        emit BookChange(msg.sender, "Book Status Changed");
+        emit UpdateBook(msg.sender, "Update Book Status");
     }
 
     // Update chapter content
@@ -129,7 +130,7 @@ contract Book is ERC721URIStorage  {
         tokenIdToBook[_tokenId].content = _content;
         tokenIdToBook[_tokenId].fee = _fee;
         _setTokenURI(_tokenId, tokenURI(_tokenId));
-        emit ChapterChange(msg.sender, "Chapter Updated");
+        emit UpdateChapter(msg.sender, "Update Chapter");
     }
 
     // Update chapter fee
@@ -137,14 +138,14 @@ contract Book is ERC721URIStorage  {
         // require(_exists(_tokenId), "Token ID does not exist");
         require(ownerOf(_tokenId) == msg.sender, "Unauthorise");
         tokenIdToBook[_tokenId].fee = _fee;
-        emit ChapterChange(msg.sender, "Chapter Updated");
+        emit UpdateChapter(msg.sender, "Update Chapter Fee");
     }
 
     // Update viewer paid status from BookManager
     function updatePaidStatus(uint256 _tokenId, address _viewer) external {
         require(msg.sender == bookManager, "Unauthorise");
         paidViewerPerChapter[_tokenId][_viewer] = true;
-        emit ChapterChange(msg.sender, "Chapter Paid");
+        // emit UpdateChapter(_viewer, "Chapter Paid");
     }
 
     // Get chapter content
@@ -155,8 +156,7 @@ contract Book is ERC721URIStorage  {
         if (ownerOf(_tokenId) == msg.sender || 
             tokenIdToBook[_tokenId].fee <= 0 ||
             paidViewerPerChapter[_tokenId][msg.sender] || 
-            membership.checkMembership(msg.sender) ||
-            auditor == msg.sender ){
+            membership.checkMembership(msg.sender) ){
             return tokenIdToBook[_tokenId];
         } else {
             return BookChapter(
@@ -177,9 +177,16 @@ contract Book is ERC721URIStorage  {
         author = _newAuthor;
     }
 
-    function getBookChapterLength() public view returns (uint256){
-        return _tokenIds.current();
+    // Note: in production, you would likely want to restrict access to this
+    function claimMyContractsGas() external {
+        require(author == msg.sender, "Unauthorise");
+        BLAST.claimMaxGas(address(this), msg.sender);
+        emit ClaimGas(msg.sender, "Gas claimed");
     }
+
+    // function getBookChapterLength() public view returns (uint256){
+    //     return tokenId;
+    // }
 
     // The following functions are overrides required by Solidity.
 

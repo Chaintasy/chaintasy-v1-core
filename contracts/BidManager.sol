@@ -4,8 +4,11 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./BookManager.sol";
+import "./IBlast.sol";
 
 contract BidManager is Ownable {
+
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     // Bid using the custom token
     IERC20 public CTY;
@@ -44,7 +47,9 @@ contract BidManager is Ownable {
     event WithdrawEvent(address bookAddress, uint256 amount);
     event FinaliseEvent(address[] result);
 
-    constructor(){}
+    constructor(){
+        BLAST.configureClaimableGas(); 
+    }
 
     // Update contract for future upgrade
     function updateBookManagerContract(address _contractAddress) public onlyOwner {
@@ -177,5 +182,10 @@ contract BidManager is Ownable {
 
     function getBookBidders(uint8 _numberOfRounds, address _bookAddress) public view returns(address[] memory){
         return bookBidders[_numberOfRounds][_bookAddress];
+    }
+
+    // Note: in production, you would likely want to restrict access to this
+    function claimMyContractsGas() external onlyOwner(){
+        BLAST.claimMaxGas(address(this), msg.sender);
     }
 }

@@ -4,16 +4,19 @@ pragma solidity ^0.8.0;
 import "./Book.sol";
 import "./BookLibrary.sol";
 import "./BookManager.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
+import "./IBlast.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract BookMarketplace is Ownable, ERC721Holder {
-    using Counters for Counters.Counter;
-    Counters.Counter private listingCounter;
-    Counters.Counter private activeListingCounter;
-    Counters.Counter private transactionCounter;
+
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
+
+    // using Counters for Counters.Counter;
+    uint256 public listingCounter;
+    uint256 public activeListingCounter;
+    uint256 public transactionCounter;
 
     // 0 -> WETH, 1 -> USDC, 2 -> USDT, 3 -> CTY
     // Currently also allows 99 -> Native Token, not registered in this pool
@@ -65,7 +68,9 @@ contract BookMarketplace is Ownable, ERC721Holder {
     event Sale(address, string);
     event FeatureListing(address, string);
 
-    constructor () { }
+    constructor () {
+        BLAST.configureClaimableGas();
+     }
 
     function updateBookLibraryContract(address _bookLibraryAddress) public onlyOwner {
         bookLibraryAddress = _bookLibraryAddress;
@@ -102,7 +107,7 @@ contract BookMarketplace is Ownable, ERC721Holder {
             require(book.ownerOf(_tokenIds[index]) == msg.sender, "Did not own the book");
             require(
                 block.timestamp >= book.getChapter(_tokenIds[index]).chapterCreationTimestamp + 10 minutes , 
-                "Listing not allow within 10 minutes"
+                "Listing not allowed"
             );
             book.safeTransferFrom(msg.sender, address(this), _tokenIds[index]);
 
@@ -113,18 +118,18 @@ contract BookMarketplace is Ownable, ERC721Holder {
             index++;
         }
         
-        listings[listingCounter.current()] = BookListing(
-                                                listingCounter.current(), _bookAddress, msg.sender, 
+        listings[listingCounter] = BookListing(
+                                                listingCounter, _bookAddress, msg.sender, 
                                                 _tokenIds, _listPrice, _paymentTokenId, 1, block.timestamp);
-        listingCounter.increment();
-        activeListingCounter.increment();
+        listingCounter = listingCounter + 1;
+        activeListingCounter = activeListingCounter + 1;
 
         emit List(_bookAddress, "Listed");
     }
 
     // Allows chapter owner to delist their listing
     function delistBookForSale(address _bookAddress, uint256 _listingCounter) public {
-        require(listingCounter.current() >= _listingCounter, "Listing not found");
+        require(listingCounter >= _listingCounter, "Listing not found");
         require(listings[_listingCounter].status == 1, "Book already delisted or sold");
         
         BookLibrary bookLibrary = BookLibrary(bookLibraryAddress);
@@ -138,7 +143,7 @@ contract BookMarketplace is Ownable, ERC721Holder {
         }
 
         listings[_listingCounter].status = 0;
-        activeListingCounter.decrement();
+        activeListingCounter = activeListingCounter - 1;
         
         Book book = Book(_bookAddress);
         
@@ -171,15 +176,15 @@ contract BookMarketplace is Ownable, ERC721Holder {
 
         // Mark listing status as 2 -> sold
         listings[_listingCounter].status = 2;
-        activeListingCounter.decrement();
+        activeListingCounter = activeListingCounter - 1;
         
         // Add to Transactions mapping
-        transactions[transactionCounter.current()] = Transaction(
+        transactions[transactionCounter] = Transaction(
                                                         _bookAddress, listings[_listingCounter].lister, 
                                                         msg.sender, listings[_listingCounter].tokenIds,
                                                         listings[_listingCounter].listPrice, listings[_listingCounter].paymentTokenId, 
                                                         block.timestamp);
-        transactionCounter.increment();
+        transactionCounter = transactionCounter + 1;
 
         // Transfer the payment to lister. 2.5% fee to Chaintasy founder
         uint256 fee = 25 * listings[_listingCounter].listPrice / 1000;
@@ -209,18 +214,15 @@ contract BookMarketplace is Ownable, ERC721Holder {
         require(_startIndex <= _endIndex, "Invalid range");
         BookListing[] memory bookListingByRange = new BookListing[](_endIndex - _startIndex + 1);    
 
-        // Listing counter starts from 0, hence current() == length    
-        uint256 length = listingCounter.current();
-
         uint256 index = 0;
         uint256 counter1 = 0;
         uint256 counter2 = 0;
 
-        while (index < length){
+        while (index < listingCounter){
             // Get the active listing in reverse order, i.e. latest listing first
-            if (listings[length - 1 - index].status == 1){
+            if (listings[listingCounter - 1 - index].status == 1){
                 if (counter1 >= _startIndex && counter1 < _endIndex){
-                    bookListingByRange[counter2] = listings[length - 1 - index];
+                    bookListingByRange[counter2] = listings[listingCounter - 1 - index];
                     counter2++;
                 }
 
@@ -238,18 +240,18 @@ contract BookMarketplace is Ownable, ERC721Holder {
 
     // Get the list of successful sale and purchase transaction based on the specified range
     function getLatestTransactionByRange(uint256 _startIndex, uint256 _endIndex) public view returns (Transaction[] memory){
-        uint256 length = transactionCounter.current();
+
         // BookListing[] memory tempBookListing
-        if (_endIndex > length - 1){
-            _endIndex = length - 1;
+        if (_endIndex > transactionCounter - 1){
+            _endIndex = transactionCounter - 1;
         }
 
         require(_startIndex <= _endIndex, "Invalid range");
 
         Transaction[] memory transactionByRange = new Transaction[](_endIndex - _startIndex + 1);
         uint256 index = 0;
-        uint256 i = length - _startIndex - 1;
-        uint256 j = length - _endIndex - 1;
+        uint256 i = transactionCounter - _startIndex - 1;
+        uint256 j = transactionCounter - _endIndex - 1;
 
         // return the addresses in reverse order
         for (i; i > j; i-- ){
@@ -262,7 +264,7 @@ contract BookMarketplace is Ownable, ERC721Holder {
 
     // Get the marketplace listing featured at the top 5 spots of marketplace
     function featureListing(uint256 _listingCounter, uint256 _amount) public {
-        require(_listingCounter <= listingCounter.current(), "Invalid listing counter");
+        require(_listingCounter <= listingCounter, "Invalid listing counter");
         require(_amount >= featureFee, "Insufficient fee");
         
         // Payment token is only CTY       
@@ -332,6 +334,18 @@ contract BookMarketplace is Ownable, ERC721Holder {
         emit FeatureListing(msg.sender, "Featured");
     }
 
+    // If approve for all Book NFT is a concern, then change to this partial approval.
+    // But this is not efficient.
+    // Future plan is to use Signature to save the gas
+    // function approveBookByChapters(uint16[] memory _chapters, address _bookAddress) public {
+    //     uint256 length = _chapters.length;
+    //     Book book = Book(_bookAddress);
+    //     for (uint16 i = 0; i < length; i++){
+    //         require(book.ownerOf(_chapters[i]) == msg.sender, "Unauthorise");
+    //         book.approve(address(this), _chapters[i]);
+    //     }
+    // }
+
     // Add the list of payment tokens for Sale and Purchase of chapter NFTs
     function addToken(address _tokenAddress) public onlyOwner {
         for (uint8 i; i < paymentTokenPool.length; i++){
@@ -340,15 +354,8 @@ contract BookMarketplace is Ownable, ERC721Holder {
         paymentTokenPool.push(IERC20(_tokenAddress));
     }
 
-    function getListingLength() public view returns (uint256){
-        return listingCounter.current();
+    function claimMyContractsGas() external onlyOwner{
+        BLAST.claimMaxGas(address(this), msg.sender);
     }
 
-    function getTransactionLength() public view returns (uint256){
-        return transactionCounter.current();
-    }
-
-    function getActiveListingLength() public view returns (uint256){
-        return activeListingCounter.current();
-    }
 }

@@ -2,20 +2,26 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./IBlast.sol";
 
 contract BookLibrary is Ownable {
+    
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
+
     // BookManager address, for safeguarding transaction
     address public bookManager;
 
     // Keep a list of books created
     address[] public bookAddresses;
 
+    // *** Change this data to offchain ***
     // Keep a list of books with new chapter
     // This list will be constantly cleaned up by founder
-    address[] public booksWithNewChapter;
+    // address[] public booksWithNewChapter;
 
+    // *** Change this data to offchain ***
     // Keep a list of books by category
-    mapping(uint8 => address[]) public booksByCategory;
+    // mapping(uint8 => address[]) public booksByCategory;
 
     // Book address => Viewer address => already favourite?
     mapping(address => mapping(address => bool)) public bookToViewerFavourite;
@@ -76,7 +82,9 @@ contract BookLibrary is Ownable {
     event Report(address, string);
     event Register(address, string);
 
-    constructor() {}
+    constructor() {
+        BLAST.configureClaimableGas();
+    }
 
     function updateBookManagerContract(address _bookManager) public onlyOwner {
         bookManager = _bookManager;
@@ -84,20 +92,21 @@ contract BookLibrary is Ownable {
 
     // Add new books
     // Trigger only by BookManager contract during creation of new book
-    function addBook(address _bookAddress, address _authorAddress, uint8 _category) public {
+    function addBook(address _bookAddress, address _authorAddress) public {
         require(msg.sender == bookManager, "Unauthorise");
         bookAddresses.push(_bookAddress);
         booksByAuthor[_authorAddress].push(_bookAddress);
-        booksByCategory[_category].push(_bookAddress);
+        // booksByCategory[_category].push(_bookAddress);
     }
 
     // Add book with new chapter to the array
     // Trigger only by BookManager contract during creation of new chapter
     // To consider moving this off-chain
-    function addChapter(address _bookAddress) public {
-        require(msg.sender == bookManager, "Unauthorise");
-        booksWithNewChapter.push(_bookAddress);
-    }
+    // *** Change this data to offchain ***
+    // function addChapter(address _bookAddress) public {
+    //     require(msg.sender == bookManager, "Unauthorise");
+    //     booksWithNewChapter.push(_bookAddress);
+    // }
 
     // For authors to register unique name to identify themselves
     // May consider to change to Soul-bound token
@@ -115,7 +124,7 @@ contract BookLibrary is Ownable {
 
     // For readers to report the book which violates the policy
     // Admin will follow up with assessment of the book
-    function reportBook(address _bookAddress, string memory _reason) public {
+    function reportBook(address _bookAddress, string memory _reportReason) public {
         // Bar malicious readers for reporting arbitrarily 
         require(!barredReporter[msg.sender], "You are barred");
 
@@ -132,13 +141,13 @@ contract BookLibrary is Ownable {
         }
 
         // Store the reason from the reader
-        bookToReportedReason[_bookAddress][msg.sender] = _reason;
+        bookToReportedReason[_bookAddress][msg.sender] = _reportReason;
 
         // Store the reader address
         bookReporters[_bookAddress].push(msg.sender);
 
         // Emit Reported event
-        emit Report(_bookAddress, _reason);
+        emit Report(_bookAddress, _reportReason);
     }
 
     // Allows the admin to remove book from report list, 
@@ -168,7 +177,7 @@ contract BookLibrary is Ownable {
     // Place 1 warning count each time the book is penalised. 
     // On the third warning count, the book will be blacklisted automatically
     // Triggered from BookManager contract
-    function penaliseBook(address _bookAddress, uint8 _category, string memory _reason) public {
+    function penaliseBook(address _bookAddress, string memory _reason) public {
         // Only BookManager is allowed to trigger this
         require(msg.sender == bookManager, "Unauthorise");
 
@@ -197,32 +206,33 @@ contract BookLibrary is Ownable {
                 index++;
             }
 
+            // *** Change this data to offchain ***
             /* Good-to-have requirement, depends on transaction fee */
             // Remove blacklisted book from booksByCategory list
-            index = 0;
-            while (index < booksByCategory[_category].length) {
-                if (booksByCategory[_category][index] == _bookAddress) {
-                    while (index + 1 < booksByCategory[_category].length) {
-                        booksByCategory[_category][index] = booksByCategory[_category][index + 1];
-                        index++;
-                    }
-                    booksByCategory[_category].pop();
-                    break;
-                }
-                index++;
-            }
+            // index = 0;
+            // while (index < booksByCategory[_category].length) {
+            //     if (booksByCategory[_category][index] == _bookAddress) {
+            //         while (index + 1 < booksByCategory[_category].length) {
+            //             booksByCategory[_category][index] = booksByCategory[_category][index + 1];
+            //             index++;
+            //         }
+            //         booksByCategory[_category].pop();
+            //         break;
+            //     }
+            //     index++;
+            // }
         }
     }
 
     // Due to appeals or mistakes from admin, book can be reinstated from blacklist
-    function removeBlacklistBook(address _bookAddress, uint8 _category) public onlyOwner {
+    function removeBlacklistBook(address _bookAddress) public onlyOwner {
         require(bookBlacklisted[_bookAddress], "Not blacklisted");
 
         // Reset the book status
         bookWarningCount[_bookAddress] = 0;
         bookBlacklisted[_bookAddress] = false;
         bookAddresses.push(_bookAddress);
-        booksByCategory[_category].push(_bookAddress);
+        // booksByCategory[_category].push(_bookAddress);
 
         // Remove the book from blacklist array
         uint256 index = 0;
@@ -316,7 +326,7 @@ contract BookLibrary is Ownable {
 
     // A generate function to return the book addresses based on the given range
     // The book addresses can come from different arrays
-    function getBookAddressesByRange(uint8 _arrayType, uint256 _startIndex, uint256 _endIndex, uint8 _category) 
+    function getBookAddressesByRange(uint8 _arrayType, uint256 _startIndex, uint256 _endIndex) 
     public view returns (address[] memory) {
         uint256 length = 0;
         address[] memory tempArray;
@@ -328,11 +338,13 @@ contract BookLibrary is Ownable {
             tempArray = bookAddresses;
             length = bookAddresses.length;
         } else if (_arrayType == 1) {
-            tempArray = booksWithNewChapter;
-            length = booksWithNewChapter.length;
+            // *** Change this data to offchain ***
+            // tempArray = booksWithNewChapter;
+            // length = booksWithNewChapter.length;
         } else if (_arrayType == 2) {
-            tempArray = booksByCategory[_category];
-            length = booksByCategory[_category].length;
+            // *** Change this data to offchain ***
+            // tempArray = booksByCategory[_category];
+            // length = booksByCategory[_category].length;
         } else {
             return new address[](0);
         }
@@ -368,21 +380,25 @@ contract BookLibrary is Ownable {
         return bookAddresses.length;
     }
 
-    function getBooksWithNewChapter() public view returns (address[] memory) {
-        return booksWithNewChapter;
-    }
+    // *** Change this data to offchain ***
+    // function getBooksWithNewChapter() public view returns (address[] memory) {
+    //     return booksWithNewChapter;
+    // }
 
-    function getbooksWithNewChapterLength() public view returns (uint256) {
-        return booksWithNewChapter.length;
-    }
+    // *** Change this data to offchain ***
+    // function getbooksWithNewChapterLength() public view returns (uint256) {
+    //     return booksWithNewChapter.length;
+    // }
 
-    function getBooksByCategory(uint8 _category) public view returns (address[] memory) {
-        return booksByCategory[_category];
-    }
+    // *** Change this data to offchain ***
+    // function getBooksByCategory(uint8 _category) public view returns (address[] memory) {
+    //     return booksByCategory[_category];
+    // }
 
-    function getbooksByCategoryLength(uint8 _category) public view returns (uint256) {
-        return booksByCategory[_category].length;
-    }
+    // *** Change this data to offchain ***
+    // function getbooksByCategoryLength(uint8 _category) public view returns (uint256) {
+    //     return booksByCategory[_category].length;
+    // }
 
     function getViewerFavouriteBooks(address _viewerAddress) public view returns (address[] memory) {
         return viewerFavourite[_viewerAddress];
@@ -404,9 +420,13 @@ contract BookLibrary is Ownable {
         return bookReporters[_bookAddress];
     }
 
-    // Move the tracking of new chapters from any book off-chain
+    // *** Change this data to offchain ***
     // function resetBooksWithNewChapter(address[] memory _books) public onlyOwner {
     //   delete booksWithNewChapter;
     //   booksWithNewChapter = _books;
     // }
+
+    function claimMyContractsGas() external onlyOwner{
+        BLAST.claimMaxGas(address(this), msg.sender);
+    }
 }

@@ -7,18 +7,20 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "./IBlast.sol";
 
 contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Ownable {
-    using Counters for Counters.Counter;
 
-    Counters.Counter private _tokenIdCounter;
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
-    uint256 public constant MAX_SUPPLY = 9999;
+    uint256 public membershipId;
+
+    // uint256 public constant MAX_SUPPLY = 9999;
     uint256 public constant MAX_PER_MINT = 5;
-    uint256 public constant PRICE_PER_MINT = 20 ether;
+    // set to 0.0001 for testnet
+    uint256 public constant PRICE_PER_MINT = 0.001 ether;
     string public baseTokenURI;
 
     mapping(uint256 => uint256) public tokenIdMembershipExpiry;
@@ -31,6 +33,9 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
     IERC20[] public subscriptionTokenPool;
     uint256[] public subscriptionTokenBalance;
 
+    event Mint(address, string);
+    event Subscribe(address, string);
+
     struct SubscriptionHistory {
         address subscriber;
         // 0 -> 30 Days, 1 -> 180 Days, 2 -> 365 Days
@@ -41,6 +46,7 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
 
     constructor() ERC721("Chaintasy Membership", "CTYM") {
         pause();
+        BLAST.configureClaimableGas();
     }
 
     function pause() public onlyOwner {
@@ -52,30 +58,37 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
     }
 
     modifier saleIsOpen {
-        require(totalSupply() <= MAX_SUPPLY, "Sale has ended");
+        // Comment out for testnet
+        // require(totalSupply() <= MAX_SUPPLY, "Sale has ended");
         if (_msgSender() != owner()) {
             require(!paused(), "Pausable: paused");
         }
         _;
     }
 
+
     function mint(address _to, uint256 _count) public payable saleIsOpen {
-        uint256 total = totalSupply();
+        // uint256 total = totalSupply();
         uint256 totalPrice = PRICE_PER_MINT * _count;
-        require(total + _count <= MAX_SUPPLY, "Exceeds max limit");
-        require(total <= MAX_SUPPLY, "Sale has ended");
+        // Comment out for testnet
+        // require(total + _count <= MAX_SUPPLY, "Exceeds max limit");
+        // require(total <= MAX_SUPPLY, "Sale has ended");
         require(_count <= MAX_PER_MINT, "Exceeds max per mint");
         require(msg.value >= totalPrice, "Value below price");
 
         for (uint256 i = 0; i < _count; i++) {
+            //_mint(to, BATCH_SIZE);
             safeMint(_to);
         }
+
+        emit Mint(msg.sender, "Mint successful");
     }
 
+    // TO change to baseTokenUri to remove the need to set token uri
     function safeMint(address to) private {
-        uint256 tokenId = _tokenIdCounter.current();
-         _tokenIdCounter.increment();
-        _safeMint(to, tokenId);
+        uint256 tokenId = membershipId;
+         membershipId = membershipId + 1;
+        _mint(to, tokenId);
         _setTokenURI(tokenId, generateURI(Strings.toString(tokenId)));
     }
 
@@ -85,7 +98,9 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
             '{',
                 '"name": "', name(), ' # ', tokenId, '", ',
                 '"description": "Chaintasy Membership NFT with different utilities", ',
-                '"image": "', baseTokenURI, 'Chaintasy/', tokenId, '.png"',
+                // set to standard image for testnet
+                // '"image": "', baseTokenURI, 'Chaintasy/', tokenId, '.png"',
+                '"image": "/Chaintasy_membership_language.png"',
             '}'
         );
         return string(
@@ -96,6 +111,7 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
         );
     }
 
+    // Allows owner to withdraw mint fee
     function withdrawAll() public payable onlyOwner {
         uint256 balance = address(this).balance;
         require(balance > 0, "Insufficient Balance");
@@ -168,7 +184,7 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
 
         IERC20 stablecoinToken = IERC20(subscriptionTokenPool[_subscriptionStablecoinType]);
         require(stablecoinToken.transferFrom(msg.sender, owner(), subscriptionFee), "Unsuccessful payment");
-
+        emit Subscribe(msg.sender, "Subscribed Successful");
     }
 
     function updateSubscriptionFee(uint8 _subscriptionType, uint256 _amount) external onlyOwner {
@@ -216,9 +232,13 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721, ERC721Enumerable)
+        override(ERC721, ERC721Enumerable,ERC721URIStorage)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
+    }
+
+    function claimMyContractsGas() external onlyOwner{
+        BLAST.claimMaxGas(address(this), msg.sender);
     }
 }

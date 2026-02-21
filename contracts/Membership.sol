@@ -9,11 +9,8 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "./IBlast.sol";
 
 contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Ownable {
-
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     uint256 public membershipId;
 
@@ -46,7 +43,6 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
 
     constructor() ERC721("Chaintasy Membership", "CTYM") {
         pause();
-        BLAST.configureClaimableGas();
     }
 
     function pause() public onlyOwner {
@@ -236,9 +232,5 @@ contract Membership is ERC721, ERC721Enumerable, ERC721URIStorage, Pausable, Own
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
-    }
-
-    function claimMyContractsGas() external onlyOwner{
-        BLAST.claimMaxGas(address(this), msg.sender);
     }
 }

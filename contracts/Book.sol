@@ -6,11 +6,8 @@ pragma solidity ^0.8.0;
 import "./Membership.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
-import "./IBlast.sol";
 
 contract Book is ERC721URIStorage  {
-
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     uint256 public tokenId;
 
@@ -43,7 +40,6 @@ contract Book is ERC721URIStorage  {
     event UpdateBook (address, string);
     event NewChapter (address, string);
     event UpdateChapter (address, string);
-    event ClaimGas (address, string);
 
     // Keeping track of chapter NFT
     mapping(uint256 => BookChapter) private tokenIdToBook;
@@ -69,7 +65,6 @@ contract Book is ERC721URIStorage  {
         category = _category;
         bookCreationTimestamp = block.timestamp;
         completed = false;
-        BLAST.configureClaimableGas(); 
     }
 
     // Generate token URI to be stored in NFT
@@ -175,13 +170,6 @@ contract Book is ERC721URIStorage  {
     function transferAuthorship(address _newAuthor) public {
         require(msg.sender == author, "Unauthorise");
         author = _newAuthor;
-    }
-
-    // Note: in production, you would likely want to restrict access to this
-    function claimMyContractsGas() external {
-        require(author == msg.sender, "Unauthorise");
-        BLAST.claimMaxGas(address(this), msg.sender);
-        emit ClaimGas(msg.sender, "Gas claimed");
     }
 
     // function getBookChapterLength() public view returns (uint256){

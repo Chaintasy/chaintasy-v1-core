@@ -8,12 +8,9 @@ import "./BookFactory.sol";
 import "./BookLibrary.sol";
 import "./BookMarketplace.sol";
 import "./Membership.sol";
-import "./IBlast.sol";
 
 contract BookManager is Ownable {
 
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
-    
     IERC20 public CTY;
 
     // Pool of tokens accepted as chapter fee payment
@@ -67,8 +64,6 @@ contract BookManager is Ownable {
     event Payment(address, string);
 
     constructor() {
-        BLAST.configureClaimableGas(); 
-
     }
 
     // Use Book Factory contract for upgradability of Book Contract
@@ -391,10 +386,4 @@ contract BookManager is Ownable {
         balanceOfLikeRewardPool += _amount;
         require(CTY.transferFrom(msg.sender, address(this), _amount), "Error in deposit");
     }
-
-    // Note: in production, you would likely want to restrict access to this
-    function claimMyContractsGas() external onlyOwner{
-        BLAST.claimMaxGas(address(this), msg.sender);
-    }
-
 }

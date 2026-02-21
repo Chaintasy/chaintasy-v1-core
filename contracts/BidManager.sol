@@ -4,11 +4,8 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./BookManager.sol";
-import "./IBlast.sol";
 
 contract BidManager is Ownable {
-
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     // Bid using the custom token
     IERC20 public CTY;
@@ -29,8 +26,6 @@ contract BidManager is Ownable {
     mapping(uint16 => mapping(address => address[])) public bookBidders;
     // Number of round => Book address => bidder address => amount
     mapping(uint16 => mapping(address => mapping(address => uint256))) public bookBidderAmount;
-    // Number of round => Book address => bidder address => disallow withdraw
-    mapping(uint16 => mapping(address => mapping(address => bool))) public disallowWithdraw;
 
     // Bid end time, new value for each round of bidding
     uint256 public endTime;
@@ -48,7 +43,6 @@ contract BidManager is Ownable {
     event FinaliseEvent(address[] result);
 
     constructor(){
-        BLAST.configureClaimableGas(); 
     }
 
     // Update contract for future upgrade
@@ -107,10 +101,17 @@ contract BidManager is Ownable {
     // Remaining bidders may keep their bids for next round of bidding, or they can withdraw their bids
     // List of books with bids will be cleaned up when finalising result
     function withdrawBid(uint16 _numberOfRounds, address _bookAddress) public {
-        require(!disallowWithdraw[_numberOfRounds][_bookAddress][msg.sender], "Your amount deducted for successful bidding");
         uint256 amount = bookBidderAmount[_numberOfRounds][_bookAddress][msg.sender];
         if (block.timestamp > endTime){
             require(finalisedResult, "Finalising result");
+            
+            // Check if the book is a winner. If so, bid cannot be withdrawn.
+            address[] memory winners = winingBidsRecord[_numberOfRounds];
+            for (uint256 i = 0; i < winners.length; i++) {
+                if (winners[i] == _bookAddress) {
+                    revert("Bid accepted, cannot withdraw");
+                }
+            }
         }
         require(amount > 0, "Nothing to withdraw");
         require(balanceOfBidderPool >= amount, "Pool is empty");
@@ -155,11 +156,6 @@ contract BidManager is Ownable {
             address tempBook = _bookAddresses[i];
             winingBidsRecord[numberOfRounds].push(tempBook);
             
-            // Set all the bidders' amount for the book to 0
-            for (uint8 j; j < bookBidders[numberOfRounds][tempBook].length; j++){
-                disallowWithdraw[numberOfRounds][tempBook][bookBidders[numberOfRounds][tempBook][j]] = true;
-            }
-
             uint256 bidAmount = bookBidAmount[numberOfRounds][tempBook];
             uint256 amount1 = bidAmount * 60 / 100;
             uint256 amount2 = bidAmount * 40 / 100;
@@ -182,10 +178,5 @@ contract BidManager is Ownable {
 
     function getBookBidders(uint8 _numberOfRounds, address _bookAddress) public view returns(address[] memory){
         return bookBidders[_numberOfRounds][_bookAddress];
-    }
-
-    // Note: in production, you would likely want to restrict access to this
-    function claimMyContractsGas() external onlyOwner(){
-        BLAST.claimMaxGas(address(this), msg.sender);
     }
 }

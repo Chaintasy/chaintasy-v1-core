@@ -2,12 +2,9 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./IBlast.sol";
-
+ 
 contract BookLibrary is Ownable {
     
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
-
     // BookManager address, for safeguarding transaction
     address public bookManager;
 
@@ -83,7 +80,6 @@ contract BookLibrary is Ownable {
     event Register(address, string);
 
     constructor() {
-        BLAST.configureClaimableGas();
     }
 
     function updateBookManagerContract(address _bookManager) public onlyOwner {
@@ -425,8 +421,4 @@ contract BookLibrary is Ownable {
     //   delete booksWithNewChapter;
     //   booksWithNewChapter = _books;
     // }
-
-    function claimMyContractsGas() external onlyOwner{
-        BLAST.claimMaxGas(address(this), msg.sender);
-    }
 }

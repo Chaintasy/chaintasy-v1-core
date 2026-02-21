@@ -4,14 +4,11 @@ pragma solidity ^0.8.0;
 import "./Book.sol";
 import "./BookLibrary.sol";
 import "./BookManager.sol";
-import "./IBlast.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract BookMarketplace is Ownable, ERC721Holder {
-
-    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
 
     // using Counters for Counters.Counter;
     uint256 public listingCounter;
@@ -69,7 +66,6 @@ contract BookMarketplace is Ownable, ERC721Holder {
     event FeatureListing(address, string);
 
     constructor () {
-        BLAST.configureClaimableGas();
      }
 
     function updateBookLibraryContract(address _bookLibraryAddress) public onlyOwner {
@@ -190,9 +186,12 @@ contract BookMarketplace is Ownable, ERC721Holder {
         uint256 fee = 25 * listings[_listingCounter].listPrice / 1000;
         uint256 amountToSeller = 975 * listings[_listingCounter].listPrice / 1000;
         if (listings[_listingCounter].paymentTokenId == 99){
-            payable(owner()).transfer(fee);
-            payable(listings[_listingCounter].lister).transfer(amountToSeller);
+            (bool successFee, ) = owner().call{value: fee}("");
+            require(successFee, "Transfer failed");
+            (bool successSeller, ) = listings[_listingCounter].lister.call{value: amountToSeller}("");
+            require(successSeller, "Transfer failed");
         } else {
+            require(msg.value == 0, "Do not send ETH");
             IERC20 token = paymentTokenPool[listings[_listingCounter].paymentTokenId];
             token.transferFrom(msg.sender, owner(), fee);
             token.transferFrom(msg.sender, listings[_listingCounter].lister, amountToSeller);
@@ -352,10 +351,6 @@ contract BookMarketplace is Ownable, ERC721Holder {
             require(paymentTokenPool[i] != IERC20(_tokenAddress), "Already exist");
         }
         paymentTokenPool.push(IERC20(_tokenAddress));
-    }
-
-    function claimMyContractsGas() external onlyOwner{
-        BLAST.claimMaxGas(address(this), msg.sender);
     }
 
 }

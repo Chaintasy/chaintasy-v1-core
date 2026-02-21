@@ -6,10 +6,7 @@ import "./Book.sol";
 
 contract BookFactory is Ownable {
   
-  IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
-
   constructor() {
-    BLAST.configureClaimableGas();
   }
 
   function newBook(
@@ -23,11 +20,4 @@ contract BookFactory is Ownable {
     Book book = new Book(_title, msg.sender, _membership, _author, _category, _image, _description); 
     return address(book);
   }
-
-  function claimMyContractsGas() external onlyOwner{
-    BLAST.claimMaxGas(address(this), msg.sender);
-  }
 }
-
-
-
